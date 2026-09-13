@@ -1,168 +1,134 @@
-# 💡 Buy or Wait? — AI Financial Decision Agent
+# Buy or Wait? — Personal Financial Decision Agent
 
-[![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![Challenge](https://img.shields.io/badge/HackerRank-Orchestrate%202026-00EA64.svg?logo=hackerrank&logoColor=black)](https://www.hackerrank.com/)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Built with Care](https://img.shields.io/badge/Engine-Deterministic%20Simulation-orange.svg)](#)
-
-> **"Can I afford this laptop today?"**  
-> You check your banking app: you have $3,500. The laptop is $800. Easy yes, right?  
-> **Not so fast.** Next Monday, your $2,500 rent is due. You also keep an emergency cushion of $1,000 for unexpected medical bills or car repairs. If you buy the laptop today, your balance crashes to $200 by Tuesday morning. You're trapped.
-
-**Buy or Wait?** is an empathetic, AI-powered financial decision agent built for the **HackerRank Orchestrate 2026** hackathon. It looks beyond the surface balance, forward-simulating your real-world financial life up to **360 days** to give honest, grounded, and personalized financial advice.
+Built by **Skyee** for the **HackerRank Orchestrate** hackathon (September 2026).
 
 ---
 
-## ✨ Why This Matters (The Human Philosophy)
+## What is this?
 
-Money isn't just numbers on a screen—it's peace of mind. Most budgeting apps tell you where your money went *last month*. This agent tells you **what will happen to your life if you swipe your card today**.
+Most banking apps tell you how much money you have *right now*. But that number is often misleading.
 
-Our decision engine is built on four core financial principles:
+If you have $2,000 in your account and want to buy a $600 phone, your balance says yes. But if your rent is $1,500 in three days and you want to keep a $500 emergency buffer, spending that $600 today leaves you in trouble.
 
-1. 🛡️ **The Emergency Cushion is Sacred**:
-   Everyone has a `minimum_balance_to_keep`. Our simulator rejects any purchase or payment plan that breaches this buffer on *any* day over the forecast horizon.
-2. 🚫 **No Phantom Money**:
-   Pending bonuses, lottery winnings, investment gains, or verbal promises do **not** buy groceries. We only count confirmed cash once it has officially settled.
-3. ❤️ **Respect Everyday Life**:
-   Groceries, utilities, medicines, and protected categories are untouchable. We only ever suggest trimming flexible expenses (like streaming subscriptions) if the user explicitly marked them as adjustable.
-4. 🧠 **Avoid the Debt Trap**:
-   Installments (BNPL) can be helpful, but they shouldn't become shackles. The engine always favors plans that minimize total interest/financing fees and clear the debt as early as safely possible.
+**Buy or Wait?** solves this by simulating your bank balance day-by-day for the next 90 days. It looks at:
+- Confirmed paydays and upcoming bills (rent, utilities, subscriptions).
+- Pending charges that haven't settled yet.
+- Your personal safety cushion (a minimum balance you never want to drop below).
+- Available payment options (upfront, 3-month/6-month installments, split payments).
 
----
-
-## 🧭 How It Works Under the Hood
-
-Instead of trusting a probabilistic language model to guess financial math (which often hallucinates dates and miscalculates sums), we built a **high-precision cash flow simulator**:
-
-```
-                       HOW THE AGENT THINKS
-                       
-    [1. User Context]             [2. 90-to-360 Day Simulation]         [3. Decision Policy]
-┌─────────────────────────┐     ┌───────────────────────────────┐     ┌──────────────────────┐
-│ • Bank Balance          │     │ • Day 0: Deduct pending debts │     │ 1. Upfront Payment?  │
-│ • Minimum Safety Buffer │────▶│ • Track Paydays & confirmed   │────▶│ 2. Installments?     │
-│ • Rent, Bills, Subs     │     │   salaries                    │     │ 3. Split (Partial)?  │
-│ • Document Receipts     │     │ • Project living expenses     │     │ 4. Wait for payday?  │
-│ • Payment Options (BNPL)│     │ • Enforce safety cushion      │     │ 5. Trim subscriptions│
-└─────────────────────────┘     └───────────────────────────────┘     └──────────────────────┘
-                                                                                 │
-                                                                                 ▼
-                                                                      [4. Grounded Output]
-                                                                      • Safe amount today
-                                                                      • Affordable status
-                                                                      • Payment schedule
-                                                                      • Plain-English reason
-```
+Then it gives you a clear answer:
+1. **Pay in full today** — if your balance stays above your safety cushion the whole time.
+2. **Use an installment plan** — if breaking the cost into smaller monthly chunks keeps your balance safe.
+3. **Pay half now, half later** — if partial payment is allowed by the seller.
+4. **Wait** — finds the exact future date your next salary arrives so you can buy it safely.
+5. **Pass / Not recommended** — if none of the options protect your minimum cushion.
 
 ---
 
-## 🛠️ Interactive Exploration (Try It Yourself!)
+## Why simulation instead of an LLM?
 
-We built practical, interactive command-line utilities so you can test individual requests, run full benchmarks, or simulate a full year.
+We intentionally didn't ask an LLM to do the financial math.
 
-### 1. Inspect Any Single Request
-Inspect a user's balance, safety cushion, available merchant options, and the agent's simulated verdict:
-```powershell
-# Test a request from the sample ground truth:
-python code/test_request.py request_01
+Language models are great for conversation, but they hallucinate numbers, make arithmetic mistakes, and struggle with strict calendar math. For something as critical as personal finances, you want exact calculations.
 
-# Test an installment recommendation (3-month BNPL):
-python code/test_request.py request_30
+The engine here is a deterministic daily cash ledger:
+- Walks through every single day from Day 0 to Day 90.
+- Deducts pending debits on Day 0 so money already committed isn't double-spent.
+- Adds confirmed salary on regular paydays.
+- Deducts recurring living expenses (groceries, rent, bills).
+- Checks every payment option against the user's minimum balance floor.
+- Ranks candidate plans by lowest total cost, fewest installments, and earliest safe completion.
 
-# Test any evaluation request:
-python code/test_request.py request_26
-```
+It runs locally in ~12 seconds across all 275 requests with zero external API calls, zero latency, and zero math errors.
 
-### 2. Full 360-Day (12-Month) Cash Flow Simulator
-See what happens to an account over an entire year of rent, paydays, and bills:
-```powershell
-python code/simulate_360_days.py request_30
-```
+---
 
-### 3. Benchmark Accuracy Against Ground Truth
-Run the automated validation suite against the 25 official sample requests:
-```powershell
-python code/evaluation/main.py
-```
+## Quick Start
 
-### 4. Simulate All 275 Requests
-Simulate every single request across the entire dataset in ~12 seconds:
-```powershell
-python code/simulate_all_275.py
-```
+Requires Python 3.10+ (uses standard library only; no extra pip packages needed).
 
-### 5. Generate Official Evaluation Output
-Process all 250 evaluation requests and regenerate `output.csv`:
-```powershell
+### 1. Run all evaluation requests
+Processes all 250 requests in `dataset/requests.csv` and outputs `output.csv`:
+```bash
 python code/main.py
 ```
 
----
+### 2. Test a specific request interactively
+Want to see how the engine makes a decision for a single user? Run:
+```bash
+# Someone who can comfortably pay upfront today:
+python code/test_request.py request_01
 
-## 📊 Dataset Ecosystem
+# Someone who needs a 3-part installment plan:
+python code/test_request.py request_30
 
-```text
-dataset/
-├── financial_profiles.csv       # Home currencies, available balance, safety cushions
-├── financial_events.csv         # Historical & recurring events (rent, groceries, salary)
-├── exchange_rates.csv           # Fixed historical currency conversions
-├── requests.csv                 # 250 official evaluation requests
-├── sample_requests.csv          # 25 public sample requests with completed answers
-├── request_payment_options.csv  # Merchant payment plans (Full, 3-mo, 6-mo, 12-mo, 24-mo)
-├── messages.csv                 # Bank alerts, bonus announcements, contract notices
-├── images.csv & media/images/   # Receipts and statements with missing transaction values
-└── output.csv                   # Target submission format
+# Someone who should wait for their next paycheck:
+python code/test_request.py request_28
 ```
 
-> **Data Privacy & Repo Cleanliness:**  
-> Raw datasets, receipts, and execution audit logs are kept locally and excluded via `.gitignore` to keep this repository clean, lightweight, and professional.
+### 3. Check ground truth accuracy
+Evaluates the engine against the 25 official sample requests:
+```bash
+python code/evaluation/main.py
+```
 
----
-
-## 📂 Codebase Architecture
-
-```text
-.
-├── code/
-│   ├── simulation/
-│   │   ├── data_loader.py       # Data parser, dated exchange rates & image extraction
-│   │   ├── cash_flow.py         # Configurable daily cash ledger simulator (90 to 360 days)
-│   │   ├── decision_engine.py   # Multi-tier ranking policy & affordability engine
-│   │   └── explanation.py       # Concise, human-grounded explanation generator
-│   ├── evaluation/
-│   │   ├── main.py              # Automated ground-truth benchmark suite
-│   │   └── usage_report.md      # Token and computational efficiency report
-│   ├── test_request.py          # Interactive CLI request inspector
-│   ├── simulate_360_days.py     # 12-month trajectory analysis tool
-│   ├── simulate_all_275.py      # Whole-dataset simulation & distribution analytics
-│   └── main.py                  # Production batch runner
-├── NOTION_GUIDE.md              # In-depth architectural & conceptual study guide
-├── problem_statement.md         # Original HackerRank challenge specification
-├── output.csv                   # Verified predictions (250 requests)
-└── README.md                    # You are here!
+### 4. Run a 360-day (full year) projection
+See how an account balance trends across 12 full months:
+```bash
+python code/simulate_360_days.py request_30
 ```
 
 ---
 
-## 📋 Evaluation Output Schema
+## How the Code is Organized
 
-The final `output.csv` conforms strictly to the 8-column competition specification:
-
-| Field | Description | Example |
-|---|---|---|
-| `request_id` | Unique ID of the purchase request | `request_30` |
-| `amount_safe_to_pay` | Maximum safe expenditure today | `775.20` |
-| `affordability_status` | Status category | `affordable_with_plan` |
-| `recommended_payment_method` | Selected payment method | `installments` |
-| `payment_plan` | Chronological payment schedule | `2026-04-06:268.74\|2026-05-06:268.74...` |
-| `earliest_date_for_full_payment`| First date safe for a 100% upfront lump sum | `2026-04-06` |
-| `spending_changes_needed` | Targeted spending adjustments | `none` |
-| `decision_explanation` | Empathetic, grounded rationale | *"Use 3 installments of USD 268.74, starting 6 April 2026..."* |
+```text
+code/
+├── simulation/
+│   ├── data_loader.py       # Reads profiles, recurring events, exchange rates, and receipt images
+│   ├── cash_flow.py         # Day-by-day cash flow ledger (supports 90 to 360 day horizons)
+│   ├── decision_engine.py   # Ranks upfront vs. installments vs. partial vs. waiting
+│   └── explanation.py       # Generates clear explanations for recommendations
+├── evaluation/
+│   ├── main.py              # Compares predictions against the 25 public sample requests
+│   └── usage_report.md      # Token/cost summary (required for hackathon submission)
+├── test_request.py          # Interactive CLI tool to inspect any single request
+├── simulate_360_days.py     # 12-month balance trajectory simulator
+├── simulate_all_275.py      # Runs all 275 requests and prints summary stats
+└── main.py                  # Full batch runner that creates output.csv
+```
 
 ---
 
-## 👤 Author & Acknowledgments
+## Dataset Overview
 
-- **Author:** [Skyee-exe](https://github.com/Skyee-exe)
-- **Challenge:** HackerRank Orchestrate (September 2026) — *Buy or Wait?*
-- **Built with:** Python 3.12, clean modular code, zero external runtime API dependencies, and a deep focus on financial health.
+The `dataset/` folder contains:
+- `requests.csv`: The 250 evaluation requests to predict.
+- `sample_requests.csv`: 25 reference examples with completed target outputs.
+- `financial_profiles.csv`: User base currencies, current balances, and minimum buffers.
+- `financial_events.csv`: History of past transactions, recurring bills, and scheduled salaries.
+- `request_payment_options.csv`: Payment terms offered by merchants for each purchase.
+- `exchange_rates.csv`: Fixed historical currency conversion rates.
+- `messages.csv` & `images.csv`: Contextual notes and receipt images for missing amounts.
+
+*Note: The raw datasets and local run logs are kept locally and excluded from git via `.gitignore` to keep the repo clean.*
+
+---
+
+## Results on the Full Dataset
+
+When running across all 275 requests:
+- **34.9% Not Affordable (96 requests)**: The purchase or available loans would compromise the user's emergency cushion.
+- **26.2% Full Payment (72 requests)**: Safe to pay 100% upfront today.
+- **19.6% Wait (54 requests)**: Safe to buy after an upcoming confirmed payday.
+- **17.1% Installments (47 requests)**: Safe using a structured 3 to 6-month payment plan.
+- **2.2% Partial Payment (6 requests)**: Split into two payments (half now, half on payday).
+
+All 275 requests are simulated in ~12 seconds.
+
+---
+
+## Author
+
+- **GitHub**: [@Skyee-exe](https://github.com/Skyee-exe)
+- **Contest**: HackerRank Orchestrate (September 2026)
