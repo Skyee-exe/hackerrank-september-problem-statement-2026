@@ -1,8 +1,10 @@
-﻿# Local datasets & media
+# Local datasets & media
 dataset/
 
 # Local logs & transcripts
 log.txt
+output.csv
+
 
 # Python
 __pycache__/
