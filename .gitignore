@@ -1,4 +1,10 @@
-﻿# Python
+﻿# Local datasets & media
+dataset/
+
+# Local logs & transcripts
+log.txt
+
+# Python
 __pycache__/
 *.py[cod]
 *.class
@@ -6,15 +12,8 @@ __pycache__/
 venv/
 env/
 
-# Environment and secrets
+# Secrets & build artifacts
 .env
 *.token
-
-# Artifacts
-code.zip
-repo.zip
+*.zip
 temp_extract/
-
-# IDE
-.vscode/
-.idea/
