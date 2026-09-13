@@ -33,7 +33,7 @@ class CashFlowSimulator:
             return self._salary_cache[cache_key]
         events = self.dl.events_by_user[user_id]
         
-        # Check messages for salary overrides or terminations
+        # thats why we check messages for salary overrides or contract termination
         user_msgs = self.dl.messages_by_user.get(user_id, [])
         msg_salary_amt = None
         msg_salary_day = None
@@ -59,7 +59,7 @@ class CashFlowSimulator:
                 d = parse_date(date_match.group(1))
                 msg_salary_day = d.day
 
-        # Check if last salary was "Final"
+        # check if contract ended so we dont count phantom income
         salaries = [e for e in events if e['category'] == 'salary']
         if salaries:
             salaries.sort(key=lambda x: x['settlement_date_parsed'] or x['event_date_parsed'] or date.min)
@@ -72,7 +72,7 @@ class CashFlowSimulator:
             self._salary_cache[cache_key] = res
             return res
 
-        # Check confirmed scheduled salary event
+        # grab confirmed scheduled salary first
         for e in events:
             if e['category'] == 'salary' and e['status'] in ('scheduled', 'pending'):
                 s_date = e['settlement_date_parsed'] or e['event_date_parsed']
@@ -83,7 +83,7 @@ class CashFlowSimulator:
                     self._salary_cache[cache_key] = res
                     return res
 
-        # Fallback to settled salaries (pick the most common payday, e.g. 15th)
+        # fallback to historical payday if nothing scheduled
         settled_salaries = [e for e in salaries if e['status'] == 'settled']
         if settled_salaries:
             days = [(s['settlement_date_parsed'] or s['event_date_parsed']).day for s in settled_salaries if (s['settlement_date_parsed'] or s['event_date_parsed'])]
@@ -107,7 +107,7 @@ class CashFlowSimulator:
         events = self.dl.events_by_user[user_id]
         past_events = [e for e in events if (e['settlement_date_parsed'] or e['event_date_parsed']) and (e['settlement_date_parsed'] or e['event_date_parsed']) <= request_date]
         
-        # Group by description
+        # group past debits to find regular patterns
         by_desc = defaultdict(list)
         for e in past_events:
             if e['direction'] == 'debit' and e['status'] == 'settled':
@@ -119,7 +119,7 @@ class CashFlowSimulator:
             occurrences.sort(key=lambda x: x[0])
             last_d, last_e = occurrences[-1]
             
-            # An expense is recurring if it occurred at least 2 times, or if it occurred in the last 45 days
+            # detects monthly or weekly intervals
             if len(occurrences) >= 2 or (request_date - last_d).days <= 35:
                 diffs = [(occurrences[i][0] - occurrences[i-1][0]).days for i in range(1, len(occurrences))] if len(occurrences) >= 2 else [30]
                 avg_diff = sum(diffs) / len(diffs) if diffs else 30
@@ -157,7 +157,7 @@ class CashFlowSimulator:
         p = self.dl.profiles[user_id]
         bal = p['current_available_balance'] - self.dl.pending_debits_by_user[user_id]
         
-        # Account for explicitly scheduled future events in dataset (cached)
+        # load future scheduled transactions from dataset
         fs_key = (user_id, req_date)
         if fs_key not in self._future_scheduled_cache:
             fs = defaultdict(float)
@@ -189,22 +189,19 @@ class CashFlowSimulator:
         min_observed_bal = bal
         daily_balances = {}
 
+        # day-by-day cash ledger simulation loop
         for offset in range(horizon_days + 1):
             cur_date = req_date + timedelta(days=offset)
             
-            # Extra payments (from proposed plan)
             if extra_payments and cur_date in extra_payments:
                 bal -= extra_payments[cur_date]
 
-            # Future scheduled events in dataset
             if cur_date in future_scheduled:
                 bal -= future_scheduled[cur_date]
 
-            # Salary credit
             if salary_day is not None and cur_date.day == salary_day and cur_date > req_date:
                 bal += salary_amt
 
-            # Recurring expenses
             for rec in recurring_expenses:
                 eid = rec['event_id']
                 if eid in stop_eids:

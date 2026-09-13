@@ -46,12 +46,12 @@ class DecisionEngine:
         user_methods = profile['payment_methods_user_will_consider']
         max_install_months = profile['max_installment_months']
 
-        # 1. Compute amount_safe_to_pay today (without spending changes)
+        # headroom calculation determines how much cash is safe today
         min_obs_bal, baseline_balances = self.sim.simulate(uid, req_date_str)
         headroom = min_obs_bal - min_keep
         amount_safe = max(0.0, min(headroom, req_amt))
 
-        # 2. Compute earliest_date_for_full_payment (O(N) prefix/suffix scan)
+        # prefix and suffix minimums for O(N) earliest payment date lookup
         dates = [req_date + timedelta(days=i) for i in range(91)]
         bals = [baseline_balances[d] for d in dates]
         
@@ -78,7 +78,7 @@ class DecisionEngine:
 
         candidates = []
 
-        # Candidate 1: Full Payment Today
+        # option 1: full payment upfront
         if 'full_payment' in user_methods and amount_safe >= req_amt:
             candidates.append({
                 'status': 'affordable_now',
@@ -93,7 +93,7 @@ class DecisionEngine:
                 'option_id': 'opt_00'
             })
 
-        # Candidate 2: Installments
+        # option 2: merchant installment plans
         if 'installments' in user_methods:
             options = self.dl.payment_options_by_req.get(req_id, [])
             for opt in options:
@@ -102,7 +102,6 @@ class DecisionEngine:
                 num_pmts = opt['number_of_payments']
                 freq = opt['payment_frequency_days'] or 30
                 
-                # Check max installment duration
                 duration_days = (num_pmts - 1) * freq
                 duration_months = round(duration_days / 30)
                 if max_install_months is not None and duration_months > max_install_months:
@@ -116,7 +115,7 @@ class DecisionEngine:
                     cur += timedelta(days=freq)
                 last_d = cur - timedelta(days=freq)
 
-                # Check safety via superposition on baseline balances (O(N) without re-simulation)
+                # checks installment safety using linear superposition
                 cum_ded = 0.0
                 min_b = float('inf')
                 for d in dates:
@@ -141,7 +140,7 @@ class DecisionEngine:
                         'option_id': opt['payment_option_id']
                     })
 
-        # Candidate 3: Partial Payment (O(1) evaluation via prefix/suffix min)
+        # option 3: partial payment split
         if allows_partial and 'partial_payment' in user_methods and 0 < amount_safe < req_amt:
             if earliest_full_date:
                 earliest_d = parse_date(earliest_full_date)
@@ -168,9 +167,8 @@ class DecisionEngine:
                             'option_id': 'partial'
                         })
 
-        # Candidate 4: Spending Changes (if needed)
+        # option 4: discretionary spending adjustments if needed
         if not candidates or not any(c['completes_by_deadline'] and c['no_spending_changes'] for c in candidates):
-            # Try finding flexible spending changes
             stop_cats = profile['expense_categories_user_is_willing_to_stop']
             reduce_cats = profile['expense_categories_user_is_willing_to_reduce']
             recurring = self.sim.get_recurring_expenses(uid, req_date)
@@ -185,7 +183,6 @@ class DecisionEngine:
                 if flex in ('reducible', 'reducible_or_stoppable') and cat in reduce_cats and r['minimum_allowed_amount']:
                     cand_changes.append(f"reduce_to:{eid}:{format_num(r['minimum_allowed_amount'])}")
 
-            # Test single and combinations up to 2 changes
             for ch in cand_changes:
                 min_b, _ = self.sim.simulate(uid, req_date_str, extra_payments={req_date: req_amt}, spending_changes=[ch])
                 if min_b >= min_keep and 'full_payment' in user_methods:
@@ -203,12 +200,11 @@ class DecisionEngine:
                     })
                     break
 
+            # test pairs of spending adjustments if single changes are insufficient
             if not candidates and len(cand_changes) >= 2:
-                # Test pairs
                 for i in range(len(cand_changes)):
                     for j in range(i + 1, len(cand_changes)):
                         ch_pair = [cand_changes[i], cand_changes[j]]
-                        # Ensure not modifying the same event twice
                         e1 = cand_changes[i].split(':')[1]
                         e2 = cand_changes[j].split(':')[1]
                         if e1 == e2:
@@ -231,16 +227,10 @@ class DecisionEngine:
                     if candidates:
                         break
 
-        # Select Best Candidate using 6-tier ranking
+        # select best plan using 6-tier policy ranking
         best_cand = None
         if candidates:
-            # Sort candidates by:
-            # 1. completes_by_deadline (True first -> 0)
-            # 2. no_spending_changes (True first -> 0)
-            # 3. total_cost (lowest first)
-            # 4. start_date (earliest first)
-            # 5. num_payments (fewest first)
-            # 6. option_id (alphabetical)
+            # ranks by: deadline -> no spending changes -> lowest cost -> earliest start -> fewer payments
             candidates.sort(key=lambda c: (
                 0 if c['completes_by_deadline'] else 1,
                 0 if c['no_spending_changes'] else 1,
@@ -252,7 +242,7 @@ class DecisionEngine:
             if candidates[0]['completes_by_deadline']:
                 best_cand = candidates[0]
 
-        # If no plan completes by deadline, check Wait
+        # fallback to wait if salary arrives before deadline
         if not best_cand:
             if earliest_full_date and 'full_payment' in user_methods:
                 best_cand = {
