@@ -5,6 +5,11 @@ dataset/
 log.txt
 output.csv
 
+# Internal docs & prompt guides
+CLAUDE.md
+NOTION_GUIDE.md
+AGENTS.md
+problem_statement.md
 
 # Python
 __pycache__/
