@@ -222,21 +222,55 @@ def main():
             currency=args.currency
         )
     else:
-        # Easy, interactive shorthand demonstration
-        print("💡 QUICK SHORTHAND USAGE:")
-        print("   python code/test_custom.py <BALANCE> <BUFFER> <AMOUNT>\n")
-        print("   Example: python code/test_custom.py 4500 1000 800\n")
-        print("Running demo simulation with Balance=$4,500, Buffer=$1,000, Purchase=$800:\n")
-        simulate_advanced(
-            balance=4500.0,
-            min_buffer=1000.0,
-            purchase_amount=800.0,
-            salary_amount=3000.0,
-            salary_day=15,
-            rent_amount=1200.0,
-            rent_day=1,
-            currency="$"
-        )
+        # Interactive terminal mode: ask user to put in values
+        print("=" * 78)
+        print(" 💬 INTERACTIVE FINANCIAL TEST WIZARD")
+        print(" Enter your financial details below (or press Enter for defaults):")
+        print("=" * 78)
+        try:
+            val = input("1. Current bank balance (e.g. 5000): ").strip()
+            bal = float(val) if val else 5000.0
+
+            val = input("2. Minimum emergency cushion to keep (e.g. 1000): ").strip()
+            buf = float(val) if val else 1000.0
+
+            val = input("3. Purchase price of the item (e.g. 1200): ").strip()
+            amt = float(val) if val else 1200.0
+
+            val = input("4. Monthly salary [default 3000]: ").strip()
+            sal = float(val) if val else 3000.0
+
+            val = input("5. Salary payday of the month (1-31) [default 15]: ").strip()
+            pday = int(val) if val else 15
+
+            val = input("6. Monthly rent / essential bills [default 1200]: ").strip()
+            rnt = float(val) if val else 1200.0
+
+            val = input("7. Rent due day of the month (1-31) [default 1]: ").strip()
+            rday = int(val) if val else 1
+
+            simulate_advanced(
+                balance=bal,
+                min_buffer=buf,
+                purchase_amount=amt,
+                salary_amount=sal,
+                salary_day=pday,
+                rent_amount=rnt,
+                rent_day=rday,
+                currency="$"
+            )
+        except (EOFError, KeyboardInterrupt):
+            print("\nInput cancelled. Running with sample defaults:\n")
+            simulate_advanced(
+                balance=5000.0,
+                min_buffer=1000.0,
+                purchase_amount=1200.0,
+                salary_amount=3000.0,
+                salary_day=15,
+                rent_amount=1200.0,
+                rent_day=1,
+                currency="$"
+            )
 
 if __name__ == '__main__':
     main()
