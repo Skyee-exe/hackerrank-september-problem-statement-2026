@@ -52,23 +52,23 @@ class DecisionEngine:
         amount_safe = max(0.0, min(headroom, req_amt))
 
         # 2. Compute earliest_date_for_full_payment (O(N) prefix/suffix scan)
+        dates = [req_date + timedelta(days=i) for i in range(91)]
+        bals = [baseline_balances[d] for d in dates]
+        
+        prefix_min = [0.0] * 91
+        prefix_min[0] = bals[0]
+        for i in range(1, 91):
+            prefix_min[i] = min(prefix_min[i-1], bals[i])
+            
+        suffix_min = [0.0] * 91
+        suffix_min[90] = bals[90]
+        for i in range(89, -1, -1):
+            suffix_min[i] = min(suffix_min[i+1], bals[i])
+
         earliest_full_date = ""
         if amount_safe >= req_amt:
             earliest_full_date = req_date_str
         else:
-            dates = [req_date + timedelta(days=i) for i in range(91)]
-            bals = [baseline_balances[d] for d in dates]
-            
-            prefix_min = [0.0] * 91
-            prefix_min[0] = bals[0]
-            for i in range(1, 91):
-                prefix_min[i] = min(prefix_min[i-1], bals[i])
-                
-            suffix_min = [0.0] * 91
-            suffix_min[90] = bals[90]
-            for i in range(89, -1, -1):
-                suffix_min[i] = min(suffix_min[i+1], bals[i])
-                
             for i in range(91):
                 cond_prefix = (prefix_min[i-1] >= min_keep) if i > 0 else True
                 cond_suffix = (suffix_min[i] - req_amt >= min_keep)
@@ -116,8 +116,16 @@ class DecisionEngine:
                     cur += timedelta(days=freq)
                 last_d = cur - timedelta(days=freq)
 
-                # Check safety
-                min_b, _ = self.sim.simulate(uid, req_date_str, extra_payments=pmts)
+                # Check safety via superposition on baseline balances (O(N) without re-simulation)
+                cum_ded = 0.0
+                min_b = float('inf')
+                for d in dates:
+                    if d in pmts:
+                        cum_ded += pmts[d]
+                    b = baseline_balances[d] - cum_ded
+                    if b < min_b:
+                        min_b = b
+
                 if min_b >= min_keep:
                     plan_str = '|'.join(f"{format_date(d)}:{format_num(a)}" for d, a in sorted(pmts.items()))
                     candidates.append({
@@ -133,14 +141,18 @@ class DecisionEngine:
                         'option_id': opt['payment_option_id']
                     })
 
-        # Candidate 3: Partial Payment
+        # Candidate 3: Partial Payment (O(1) evaluation via prefix/suffix min)
         if allows_partial and 'partial_payment' in user_methods and 0 < amount_safe < req_amt:
             if earliest_full_date:
                 earliest_d = parse_date(earliest_full_date)
                 if earliest_d <= desired_date:
                     remainder = req_amt - amount_safe
-                    pmts = {req_date: amount_safe, earliest_d: remainder}
-                    min_b, _ = self.sim.simulate(uid, req_date_str, extra_payments=pmts)
+                    offset = (earliest_d - req_date).days
+                    if offset > 0 and offset < 91:
+                        min_b = min(prefix_min[offset - 1] - amount_safe, suffix_min[offset] - req_amt)
+                    else:
+                        min_b = suffix_min[0] - req_amt
+
                     if min_b >= min_keep:
                         plan_str = f"{req_date_str}:{format_num(amount_safe)}|{earliest_full_date}:{format_num(remainder)}"
                         candidates.append({
