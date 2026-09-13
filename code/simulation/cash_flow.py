@@ -127,7 +127,7 @@ class CashFlowSimulator:
                     })
         return recurring
 
-    def simulate(self, user_id, request_date_str, extra_payments=None, spending_changes=None):
+    def simulate(self, user_id, request_date_str, extra_payments=None, spending_changes=None, horizon_days=90):
         req_date = parse_date(request_date_str)
         p = self.dl.profiles[user_id]
         bal = p['current_available_balance']
@@ -166,7 +166,7 @@ class CashFlowSimulator:
         min_observed_bal = bal
         daily_balances = {}
 
-        for offset in range(91):
+        for offset in range(horizon_days + 1):
             cur_date = req_date + timedelta(days=offset)
             
             # Extra payments (from proposed plan)
