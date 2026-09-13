@@ -1,14 +1,21 @@
 import os
 import sys
-from datetime import datetime, timedelta
-from collections import defaultdict
+from datetime import date, datetime, timedelta
+from collections import defaultdict, Counter
 import re
 
 sys.path.append('code')
 from simulation.data_loader import DataLoader
 
 def parse_date(d_str):
-    return datetime.strptime(d_str, '%Y-%m-%d').date()
+    if not d_str:
+        return None
+    if isinstance(d_str, date):
+        return d_str
+    try:
+        return date(int(d_str[:4]), int(d_str[5:7]), int(d_str[8:10]))
+    except Exception:
+        return None
 
 def format_date(d):
     return d.strftime('%Y-%m-%d')
@@ -16,8 +23,14 @@ def format_date(d):
 class CashFlowSimulator:
     def __init__(self, data_loader: DataLoader):
         self.dl = data_loader
+        self._salary_cache = {}
+        self._recurring_cache = {}
+        self._future_scheduled_cache = {}
 
     def get_salary_info(self, user_id, request_date):
+        cache_key = (user_id, request_date)
+        if cache_key in self._salary_cache:
+            return self._salary_cache[cache_key]
         events = self.dl.events_by_user[user_id]
         
         # Check messages for salary overrides or terminations
@@ -49,45 +62,56 @@ class CashFlowSimulator:
         # Check if last salary was "Final"
         salaries = [e for e in events if e['category'] == 'salary']
         if salaries:
-            salaries.sort(key=lambda x: parse_date(x['settlement_date'] or x['event_date']))
+            salaries.sort(key=lambda x: x['settlement_date_parsed'] or x['event_date_parsed'] or date.min)
             last_sal = salaries[-1]
-            if 'final' in last_sal['description'].lower() or 'temporary' in last_sal['description'].lower() and 'ended' in last_sal['description'].lower():
+            if 'final' in last_sal['description'].lower() or ('temporary' in last_sal['description'].lower() and 'ended' in last_sal['description'].lower()):
                 no_future_salary = True
 
         if no_future_salary:
-            return 0.0, None, None
+            res = (0.0, None, None)
+            self._salary_cache[cache_key] = res
+            return res
 
         # Check confirmed scheduled salary event
         for e in events:
             if e['category'] == 'salary' and e['status'] in ('scheduled', 'pending'):
-                s_date = parse_date(e['settlement_date'] or e['event_date'])
-                if s_date >= request_date:
+                s_date = e['settlement_date_parsed'] or e['event_date_parsed']
+                if s_date and s_date >= request_date:
                     amt = msg_salary_amt if msg_salary_amt is not None else e['amount']
                     day = msg_salary_day if msg_salary_day is not None else s_date.day
-                    return amt, day, s_date
+                    res = (amt, day, s_date)
+                    self._salary_cache[cache_key] = res
+                    return res
 
         # Fallback to settled salaries (pick the most common payday, e.g. 15th)
         settled_salaries = [e for e in salaries if e['status'] == 'settled']
         if settled_salaries:
-            from collections import Counter
-            days = [parse_date(s['settlement_date'] or s['event_date']).day for s in settled_salaries]
-            most_common_day = Counter(days).most_common(1)[0][0]
+            days = [(s['settlement_date_parsed'] or s['event_date_parsed']).day for s in settled_salaries if (s['settlement_date_parsed'] or s['event_date_parsed'])]
+            most_common_day = Counter(days).most_common(1)[0][0] if days else 15
             last_sal = settled_salaries[-1]
             amt = msg_salary_amt if msg_salary_amt is not None else last_sal['amount']
             day = msg_salary_day if msg_salary_day is not None else most_common_day
-            return amt, day, last_sal
+            res = (amt, day, last_sal)
+            self._salary_cache[cache_key] = res
+            return res
 
-        return 0.0, 15, None
+        res = (0.0, 15, None)
+        self._salary_cache[cache_key] = res
+        return res
 
     def get_recurring_expenses(self, user_id, request_date):
+        cache_key = (user_id, request_date)
+        if cache_key in self._recurring_cache:
+            return self._recurring_cache[cache_key]
+
         events = self.dl.events_by_user[user_id]
-        past_events = [e for e in events if parse_date(e['settlement_date'] or e['event_date']) <= request_date]
+        past_events = [e for e in events if (e['settlement_date_parsed'] or e['event_date_parsed']) and (e['settlement_date_parsed'] or e['event_date_parsed']) <= request_date]
         
         # Group by description
         by_desc = defaultdict(list)
         for e in past_events:
             if e['direction'] == 'debit' and e['status'] == 'settled':
-                d = parse_date(e['settlement_date'] or e['event_date'])
+                d = e['settlement_date_parsed'] or e['event_date_parsed']
                 by_desc[e['description']].append((d, e))
 
         recurring = []
@@ -125,30 +149,29 @@ class CashFlowSimulator:
                         'flexibility': last_e['flexibility'],
                         'minimum_allowed_amount': last_e['minimum_allowed_amount']
                     })
+        self._recurring_cache[cache_key] = recurring
         return recurring
 
     def simulate(self, user_id, request_date_str, extra_payments=None, spending_changes=None, horizon_days=90):
         req_date = parse_date(request_date_str)
         p = self.dl.profiles[user_id]
-        bal = p['current_available_balance']
-        min_bal = p['minimum_balance_to_keep']
+        bal = p['current_available_balance'] - self.dl.pending_debits_by_user[user_id]
         
-        # 1. Deduct pending debits immediately
-        events = self.dl.events_by_user[user_id]
-        for e in events:
-            if e['direction'] == 'debit' and e['status'] == 'pending':
-                bal -= e['amount']
-
-        # Also account for explicitly scheduled future events in dataset
-        future_scheduled = defaultdict(float)
-        for e in events:
-            if e['status'] == 'scheduled' and e['category'] != 'salary':
-                d = parse_date(e['settlement_date'] or e['event_date'])
-                if d >= req_date:
-                    if e['direction'] == 'debit':
-                        future_scheduled[d] += e['amount']
-                    elif e['direction'] == 'credit':
-                        future_scheduled[d] -= e['amount']
+        # Account for explicitly scheduled future events in dataset (cached)
+        fs_key = (user_id, req_date)
+        if fs_key not in self._future_scheduled_cache:
+            fs = defaultdict(float)
+            events = self.dl.events_by_user[user_id]
+            for e in events:
+                if e['status'] == 'scheduled' and e['category'] != 'salary':
+                    d = e['settlement_date_parsed'] or e['event_date_parsed']
+                    if d and d >= req_date:
+                        if e['direction'] == 'debit':
+                            fs[d] += e['amount']
+                        elif e['direction'] == 'credit':
+                            fs[d] -= e['amount']
+            self._future_scheduled_cache[fs_key] = fs
+        future_scheduled = self._future_scheduled_cache[fs_key]
 
         salary_amt, salary_day, _ = self.get_salary_info(user_id, req_date)
         recurring_expenses = self.get_recurring_expenses(user_id, req_date)

@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, Any, List
 
 sys.path.append('code')
@@ -9,7 +9,14 @@ from simulation.cash_flow import CashFlowSimulator
 from simulation.explanation import generate_explanation
 
 def parse_date(d_str):
-    return datetime.strptime(d_str, '%Y-%m-%d').date()
+    if not d_str:
+        return None
+    if isinstance(d_str, date):
+        return d_str
+    try:
+        return date(int(d_str[:4]), int(d_str[5:7]), int(d_str[8:10]))
+    except Exception:
+        return None
 
 def format_date(d):
     return d.strftime('%Y-%m-%d')
@@ -40,20 +47,33 @@ class DecisionEngine:
         max_install_months = profile['max_installment_months']
 
         # 1. Compute amount_safe_to_pay today (without spending changes)
-        min_obs_bal, _ = self.sim.simulate(uid, req_date_str)
+        min_obs_bal, baseline_balances = self.sim.simulate(uid, req_date_str)
         headroom = min_obs_bal - min_keep
         amount_safe = max(0.0, min(headroom, req_amt))
 
-        # 2. Compute earliest_date_for_full_payment
+        # 2. Compute earliest_date_for_full_payment (O(N) prefix/suffix scan)
         earliest_full_date = ""
         if amount_safe >= req_amt:
             earliest_full_date = req_date_str
         else:
-            for offset in range(91):
-                cand_d = req_date + timedelta(days=offset)
-                min_b, _ = self.sim.simulate(uid, req_date_str, extra_payments={cand_d: req_amt})
-                if min_b >= min_keep:
-                    earliest_full_date = format_date(cand_d)
+            dates = [req_date + timedelta(days=i) for i in range(91)]
+            bals = [baseline_balances[d] for d in dates]
+            
+            prefix_min = [0.0] * 91
+            prefix_min[0] = bals[0]
+            for i in range(1, 91):
+                prefix_min[i] = min(prefix_min[i-1], bals[i])
+                
+            suffix_min = [0.0] * 91
+            suffix_min[90] = bals[90]
+            for i in range(89, -1, -1):
+                suffix_min[i] = min(suffix_min[i+1], bals[i])
+                
+            for i in range(91):
+                cond_prefix = (prefix_min[i-1] >= min_keep) if i > 0 else True
+                cond_suffix = (suffix_min[i] - req_amt >= min_keep)
+                if cond_prefix and cond_suffix:
+                    earliest_full_date = format_date(dates[i])
                     break
 
         candidates = []

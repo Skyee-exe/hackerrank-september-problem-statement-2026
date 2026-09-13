@@ -1,7 +1,17 @@
 import os
 import csv
-from datetime import datetime
+from datetime import date, datetime
 from collections import defaultdict
+
+def parse_date(d_str):
+    if not d_str:
+        return None
+    if isinstance(d_str, date):
+        return d_str
+    try:
+        return date(int(d_str[:4]), int(d_str[5:7]), int(d_str[8:10]))
+    except Exception:
+        return None
 
 # Verified multimodal extractions from dataset/media/images/
 IMAGE_AMOUNTS = {
@@ -34,6 +44,7 @@ class DataLoader:
         self.payment_options_by_req = defaultdict(list)
         self.messages_by_user = defaultdict(list)
         self.messages_by_req = defaultdict(list)
+        self.pending_debits_by_user = defaultdict(float)
         self.load_all()
 
     def load_all(self):
@@ -42,6 +53,10 @@ class DataLoader:
         self._load_payment_options()
         self._load_messages()
         self._load_events()
+        for uid, evts in self.events_by_user.items():
+            self.pending_debits_by_user[uid] = sum(
+                e['amount'] for e in evts if e['direction'] == 'debit' and e['status'] == 'pending'
+            )
 
     def _load_exchange_rates(self):
         path = os.path.join(self.data_dir, 'exchange_rates.csv')
@@ -178,6 +193,8 @@ class DataLoader:
                     'orig_currency': row['currency'],
                     'event_date': row['event_date'],
                     'settlement_date': settle_date,
+                    'event_date_parsed': parse_date(row['event_date']),
+                    'settlement_date_parsed': parse_date(settle_date),
                     'status': row['status'],
                     'linked_event_id': row['linked_event_id'],
                     'flexibility': row['flexibility'],

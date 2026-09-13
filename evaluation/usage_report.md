@@ -1,6 +1,6 @@
 # Evaluation Usage and Cost Report
 **HackerRank Orchestrate — Buy or Wait?**
-**Timestamp:** 2026-09-13 13:56:30
+**Timestamp:** 2026-09-13 15:22:12
 
 ---
 
@@ -8,8 +8,8 @@
 This report documents the computational, model, and token usage for the final full-dataset run of the Buy or Wait financial decision agent across all `250` evaluation requests.
 
 - **Total Requests Processed:** 250
-- **Total Pipeline Execution Time:** 10.10 seconds
-- **Average Processing Time per Request:** 40.40 ms
+- **Total Pipeline Execution Time:** 0.38 seconds
+- **Average Processing Time per Request:** 1.52 ms
 - **System Architecture:** Hybrid Deterministic Cash-Flow Simulator + Multimodal Document Extraction Engine
 
 ---
